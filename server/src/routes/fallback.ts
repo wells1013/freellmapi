@@ -44,11 +44,17 @@ fallbackRouter.get('/', (_req: Request, res: Response) => {
     ORDER BY fc.priority ASC
   `).all() as any[];
 
-  // Count enabled keys per platform
+  // Count enabled keys per platform. Custom providers use `custom-${label}`
+  // as their model platform, so we synthesise the same key here.
   const keyCounts = db.prepare(`
-    SELECT platform, COUNT(*) as count
+    SELECT
+      CASE
+        WHEN platform = 'custom' THEN 'custom-' || COALESCE(NULLIF(label, ''), 'Custom')
+        ELSE platform
+      END as platform,
+      COUNT(*) as count
     FROM api_keys WHERE enabled = 1
-    GROUP BY platform
+    GROUP BY 1
   `).all() as { platform: string; count: number }[];
   const keyCountMap = new Map(keyCounts.map(k => [k.platform, k.count]));
 
@@ -152,11 +158,15 @@ fallbackRouter.post('/sort/:preset', (req: Request, res: Response) => {
 fallbackRouter.get('/token-usage', (_req: Request, res: Response) => {
   const db = getDb();
 
-  // Get platforms that have enabled keys
+  // Get platforms that have enabled keys (custom providers use `custom-${label}`)
   const platforms = db.prepare(`
-    SELECT DISTINCT ak.platform
-    FROM api_keys ak
-    WHERE ak.enabled = 1
+    SELECT DISTINCT
+      CASE
+        WHEN platform = 'custom' THEN 'custom-' || COALESCE(NULLIF(label, ''), 'Custom')
+        ELSE platform
+      END as platform
+    FROM api_keys
+    WHERE enabled = 1
   `).all() as { platform: string }[];
   const platformSet = new Set(platforms.map(p => p.platform));
 

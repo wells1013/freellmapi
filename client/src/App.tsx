@@ -18,6 +18,9 @@ import PlaygroundPage from '@/pages/PlaygroundPage'
 import FallbackPage from '@/pages/FallbackPage'
 import EmbeddingsPage from '@/pages/EmbeddingsPage'
 import AnalyticsPage from '@/pages/AnalyticsPage'
+import { useTranslation } from 'react-i18next'
+import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
+import './i18n'
 
 const queryClient = new QueryClient()
 
@@ -82,6 +85,35 @@ function DarkModeToggle({ dark, onToggle }: { dark: boolean; onToggle: () => voi
     >
       {dark ? <Sun /> : <Moon />}
     </Button>
+  )
+}
+
+function LanguageSwitcher() {
+  const { i18n } = useTranslation()
+
+  const languageLabels: Record<string, string> = {
+    en: 'English',
+    zh: '中文',
+  }
+
+const changeLanguage = (lng: string | null) => {
+if (lng) {
+    i18n.changeLanguage(lng)
+    localStorage.setItem('language', lng)
+  }
+  }
+
+  return (
+    <Select value={i18n.language} onValueChange={changeLanguage}>
+      <SelectTrigger className="w-[100px]" aria-label="Select language">
+        {languageLabels[i18n.language] ?? i18n.language}
+      </SelectTrigger>
+      <SelectContent>
+        {Object.entries(languageLabels).map(([value, label]) => (
+          <SelectItem key={value} value={value}>{label}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   )
 }
 
@@ -188,12 +220,31 @@ function Navbar() {
 }
 
 function App() {
+  const { t } = useTranslation()
+  
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter basename={import.meta.env.BASE_URL}>
         <AuthGate>
-          <div className={`min-h-screen ${isDesktopApp ? 'desktop-backdrop' : 'bg-background'}`}>
-            <Navbar />
+          <div className="min-h-screen bg-background">
+            <header className="sticky top-0 z-40 bg-background/80 backdrop-blur border-b">
+              <div className="max-w-6xl mx-auto px-6 flex items-center justify-between">
+                <div className="flex items-center">
+                  <Brand />
+                  <nav className="flex items-center gap-6 ml-10">
+                    <NavItem to="/models">{t('app.models')}</NavItem>
+                    <NavItem to="/playground">{t('app.playground')}</NavItem>
+                    <NavItem to="/keys">{t('app.keys')}</NavItem>
+                    <NavItem to="/analytics">{t('app.analytics')}</NavItem>
+                  </nav>
+                </div>
+                <div className="flex items-center gap-2">
+                  <LanguageSwitcher />
+                  <DarkModeToggle />
+                  <Button variant="ghost" size="sm" onClick={() => logout()}>{t('app.signOut')}</Button>
+                </div>
+              </div>
+            </header>
             <main className="max-w-6xl mx-auto px-6 py-8">
               <Routes>
                 <Route path="/" element={<Navigate to="/models/chat" replace />} />

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowDown, ArrowUp } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { apiFetch } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -43,6 +44,7 @@ function formatTokens(n: number): string {
 }
 
 export default function EmbeddingsPage() {
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   // Local unsaved edits, same pattern as the chat fallback page.
   const [localFamilies, setLocalFamilies] = useState<Family[] | null>(null)
@@ -110,21 +112,20 @@ export default function EmbeddingsPage() {
   return (
     <div>
       <PageHeader
-        title="Models"
-        description="Embeddings fail over within a family only — the same model served by another provider. Vectors from different models are incompatible, so the router never swaps models on you."
+        title={t('pages.embeddings.header')}
+        description={t('pages.embeddings.description')}
         divider={false}
         actions={<ModelsTabs />}
       />
 
       <div className="space-y-6">
         <p className="text-xs text-muted-foreground">
-          <code className="rounded-md bg-muted px-1.5 py-0.5 font-mono">model: "auto"</code> on{' '}
-          <code className="rounded-md bg-muted px-1.5 py-0.5 font-mono">POST /v1/embeddings</code> routes to the
-          default family. Naming a family (or a provider model id) pins that family; providers inside it are tried in order.
+          <code className="rounded-md bg-muted px-1.5 py-0.5 font-mono">model: "auto"</code>{t('pages.embeddings.hintBefore')}{' '}
+          <code className="rounded-md bg-muted px-1.5 py-0.5 font-mono">POST /v1/embeddings</code>{t('pages.embeddings.hintAfter')}
         </p>
 
         {isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
         ) : (
           families.map(f => {
             const u = usageByFamily.get(f.family)
@@ -135,11 +136,11 @@ export default function EmbeddingsPage() {
                   <div className="flex items-baseline gap-2.5 min-w-0">
                     <h2 className="text-sm font-medium font-mono truncate">{f.family}</h2>
                     <span className="text-[10px] rounded-full px-1.5 py-0.5 bg-muted text-muted-foreground tabular-nums">
-                      {f.dimensions}d
+                      {f.dimensions}{t('pages.embeddings.dimensionsSuffix')}
                     </span>
                     {f.maxInputTokens && (
                       <span className="text-[11px] text-muted-foreground/70 tabular-nums">
-                        {formatTokens(f.maxInputTokens)} tok max
+                        {formatTokens(f.maxInputTokens)} {t('pages.embeddings.tokMax')}
                       </span>
                     )}
                     {f.family === defaultFamily ? (
@@ -156,7 +157,7 @@ export default function EmbeddingsPage() {
                     )}
                   </div>
                   <span className="text-xs text-muted-foreground tabular-nums">
-                    {u ? <>{u.requestsToday} req today · {formatTokens(u.tokensMonth)} tok this month</> : '—'}
+                    {u ? <>{u.requestsToday} {t('pages.embeddings.reqToday')} · {formatTokens(u.tokensMonth)} {t('pages.embeddings.tokThisMonth')}</> : '—'}
                   </span>
                 </div>
 
@@ -170,7 +171,7 @@ export default function EmbeddingsPage() {
                           <span className="truncate font-mono text-[11px] text-muted-foreground">{p.modelId}</span>
                           {p.keyCount === 0 && (
                             <span className="text-[10px] rounded-full px-1.5 py-0.5 bg-amber-600/15 text-amber-700 dark:bg-amber-400/15 dark:text-amber-400">
-                              no key
+                              {t('pages.embeddings.noKeyBadge')}
                             </span>
                           )}
                         </div>
@@ -181,7 +182,7 @@ export default function EmbeddingsPage() {
                           <button
                             onClick={() => moveProvider(f.family, i, -1)}
                             disabled={i === 0}
-                            aria-label="Move up"
+                            aria-label={t('pages.embeddings.moveUp')}
                             className="rounded-md p-1 text-muted-foreground/60 hover:text-foreground disabled:opacity-25 transition-colors"
                           >
                             <ArrowUp className="size-3.5" />
@@ -189,7 +190,7 @@ export default function EmbeddingsPage() {
                           <button
                             onClick={() => moveProvider(f.family, i, 1)}
                             disabled={i === f.providers.length - 1}
-                            aria-label="Move down"
+                            aria-label={t('pages.embeddings.moveDown')}
                             className="rounded-md p-1 text-muted-foreground/60 hover:text-foreground disabled:opacity-25 transition-colors"
                           >
                             <ArrowDown className="size-3.5" />
@@ -208,13 +209,13 @@ export default function EmbeddingsPage() {
           })
         )}
 
-        <FloatingBar show={hasChanges}>
-          <span className="text-xs text-muted-foreground">Unsaved changes</span>
-          <Button variant="outline" size="sm" onClick={discard}>Discard</Button>
-          <Button size="sm" onClick={handleSave} disabled={saveMutation.isPending}>
-            {saveMutation.isPending ? 'Saving…' : 'Save changes'}
-          </Button>
-        </FloatingBar>
+          <FloatingBar show={hasChanges}>
+            <span className="text-xs text-muted-foreground">{t('pages.embeddings.unsavedChanges')}</span>
+            <Button variant="outline" size="sm" onClick={discard}>{t('pages.embeddings.discard')}</Button>
+            <Button size="sm" onClick={handleSave} disabled={saveMutation.isPending}>
+              {saveMutation.isPending ? t('pages.embeddings.saving') : t('pages.embeddings.saveChanges')}
+            </Button>
+          </FloatingBar>
       </div>
     </div>
   )

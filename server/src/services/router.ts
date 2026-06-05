@@ -397,13 +397,23 @@ export function routeRequest(estimatedTokens = 1000, skipKeys?: Set<string>, pre
     if (entry.context_window != null && estimatedTokens > entry.context_window) continue;
 
     // Check if we have a provider for this platform
-    const provider = getProvider(entry.platform as any);
+    const isCustom = entry.platform === 'custom' || entry.platform.startsWith('custom-');
+    const keyPlatform = isCustom ? 'custom' : entry.platform;
+    const provider = getProvider(isCustom ? 'custom' : (entry.platform as any));
     if (!provider) continue;
 
     // Get enabled keys that have not already failed validation or decryption.
-    const keys = db.prepare(
-      "SELECT * FROM api_keys WHERE platform = ? AND enabled = 1 AND status IN ('healthy', 'unknown')"
-    ).all(entry.platform) as KeyRow[];
+    let keys: KeyRow[];
+    if (isCustom && entry.platform.startsWith('custom-')) {
+      const label = entry.platform.slice(7);
+      keys = db.prepare(
+        "SELECT * FROM api_keys WHERE platform = ? AND label = ? AND enabled = 1 AND status IN ('healthy', 'unknown')"
+      ).all(keyPlatform, label) as KeyRow[];
+    } else {
+      keys = db.prepare(
+        "SELECT * FROM api_keys WHERE platform = ? AND enabled = 1 AND status IN ('healthy', 'unknown')"
+      ).all(keyPlatform) as KeyRow[];
+    }
 
     if (keys.length === 0) continue;
 
@@ -449,7 +459,7 @@ export function routeRequest(estimatedTokens = 1000, skipKeys?: Set<string>, pre
       // For the 'custom' platform the real provider is built from this key's
       // base_url (the registered instance is just a placeholder). A custom key
       // with no base_url can't be routed — skip it.
-      const resolvedProvider = entry.platform === 'custom'
+      const resolvedProvider = isCustom
         ? resolveProvider('custom', key.base_url)
         : provider;
       if (!resolvedProvider) continue;

@@ -118,18 +118,70 @@ keysRouter.post('/', (req: Request, res: Response) => {
 });
 
 // ── Custom OpenAI-compatible provider (#117) ──────────────────────────────
-// A single user-configured endpoint (llama.cpp / LM Studio / vLLM / Ollama /
-// any OpenAI-compatible base_url). The endpoint lives on one 'custom' api_keys
-// row; each call registers another model that routes through it.
+// A user-configured endpoint (llama.cpp / LM Studio / vLLM / Ollama / any
+// OpenAI-compatible base_url). Each unique base_url gets its own api_keys row;
+// each call registers another model that routes through that endpoint.
 const customProviderSchema = z.object({
   baseUrl: z.string().url('baseUrl must be a valid URL'),
-  model: z.string().min(1, 'model is required'),
+  model: z.string().optional(),
   displayName: z.string().optional(),
   apiKey: z.string().optional(),
   label: z.string().optional(),
 });
 
-keysRouter.post('/custom', (req: Request, res: Response) => {
+async function discoverModels(baseUrl: string, apiKey?: string): Promise<string[]> {
+  const url = `${baseUrl.replace(/\/+$/, '')}/models`;
+  const headers: Record<string, string> = {};
+  if (apiKey) {
+    headers['Authorization'] = `Bearer ${apiKey}`;
+  }
+  const response = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status} ${response.statusText}`);
+  }
+  const body = await response.json() as { data?: Array<{ id: string }> };
+  if (!body.data || !Array.isArray(body.data)) {
+    throw new Error('Unexpected response format');
+  }
+  return body.data.map(m => m.id);
+}
+
+function registerCustomModel(db: ReturnType<typeof getDb>, modelId: string, displayName: string, label: string): number {
+  const modelPlatform = `custom-${label}`;
+  db.prepare(`
+    INSERT OR IGNORE INTO models
+      (platform, model_id, display_name, intelligence_rank, speed_rank, size_label,
+       rpm_limit, rpd_limit, tpm_limit, tpd_limit, monthly_token_budget, context_window, enabled)
+    VALUES (?, ?, ?, 50, 50, 'Custom', NULL, NULL, NULL, NULL, '', NULL, 1)
+  `).run(modelPlatform, modelId, displayName);
+
+  const row = db.prepare("SELECT id FROM models WHERE platform = ? AND model_id = ?").get(modelPlatform, modelId) as { id: number };
+
+  const inChain = db.prepare('SELECT 1 FROM fallback_config WHERE model_db_id = ?').get(row.id);
+  if (!inChain) {
+    const max = db.prepare('SELECT COALESCE(MAX(priority), 0) AS m FROM fallback_config').get() as { m: number };
+    db.prepare('INSERT INTO fallback_config (model_db_id, priority, enabled) VALUES (?, ?, 1)').run(row.id, max.m + 1);
+  }
+
+  return row.id;
+}
+
+keysRouter.post('/custom/discover', async (req: Request, res: Response) => {
+  const schema = z.object({ baseUrl: z.string().min(1), apiKey: z.string().optional() });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: { message: parsed.error.errors.map(e => e.message).join(', ') } });
+    return;
+  }
+  try {
+    const models = await discoverModels(parsed.data.baseUrl, parsed.data.apiKey);
+    res.json({ models });
+  } catch (err) {
+    res.status(502).json({ error: { message: (err as Error).message }, models: [] });
+  }
+});
+
+keysRouter.post('/custom', async (req: Request, res: Response) => {
   const parsed = customProviderSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: { message: parsed.error.errors.map(e => e.message).join(', ') } });
@@ -137,22 +189,59 @@ keysRouter.post('/custom', (req: Request, res: Response) => {
   }
 
   const baseUrl = parsed.data.baseUrl.trim().replace(/\/+$/, '');
-  const modelId = parsed.data.model.trim();
-  const displayName = (parsed.data.displayName ?? modelId).trim();
-  // Local servers often need no key; keep a sentinel so there's always a bearer.
   const rawKey = parsed.data.apiKey?.trim() || 'no-key';
   const label = parsed.data.label ?? 'Custom';
 
+  const modelSpec = parsed.data.model?.trim();
+  const autoDiscover = !modelSpec || modelSpec === 'auto';
+
+  let modelIds: string[];
+
+  if (autoDiscover) {
+    try {
+      modelIds = await discoverModels(baseUrl, parsed.data.apiKey?.trim() || undefined);
+    } catch (err) {
+      const message = (err as Error).message;
+      const db = getDb();
+      const existing = db.prepare("SELECT id FROM api_keys WHERE platform = 'custom' AND base_url = ? LIMIT 1").get(baseUrl) as { id: number } | undefined;
+      let keyId: number;
+      if (existing) {
+        const { encrypted, iv, authTag } = encrypt(rawKey);
+        db.prepare("UPDATE api_keys SET label = ?, base_url = ?, encrypted_key = ?, iv = ?, auth_tag = ?, status = 'unknown', enabled = 1 WHERE id = ?")
+          .run(label, baseUrl, encrypted, iv, authTag, existing.id);
+        keyId = existing.id;
+      } else {
+        const { encrypted, iv, authTag } = encrypt(rawKey);
+        const r = db.prepare(`
+          INSERT INTO api_keys (platform, label, encrypted_key, iv, auth_tag, status, enabled, base_url)
+          VALUES ('custom', ?, ?, ?, ?, 'unknown', 1, ?)
+        `).run(label, encrypted, iv, authTag, baseUrl);
+        keyId = Number(r.lastInsertRowid);
+      }
+      res.status(201).json({
+        success: true,
+        autoDiscovered: false,
+        warning: `Failed to discover models: ${message}. Add models manually.`,
+        keyId,
+        platform: 'custom',
+        baseUrl,
+        maskedKey: maskKey(rawKey),
+        models: [],
+      });
+      return;
+    }
+  } else {
+    modelIds = [modelSpec];
+  }
+
   const db = getDb();
   const upsert = db.transaction(() => {
-    // One shared 'custom' key holds the endpoint URL. Reuse it across models;
-    // update its base_url/key when re-submitted.
-    const existing = db.prepare("SELECT id FROM api_keys WHERE platform = 'custom' LIMIT 1").get() as { id: number } | undefined;
+    const existing = db.prepare("SELECT id FROM api_keys WHERE platform = 'custom' AND base_url = ? LIMIT 1").get(baseUrl) as { id: number } | undefined;
     let keyId: number;
     if (existing) {
       const { encrypted, iv, authTag } = encrypt(rawKey);
-      db.prepare("UPDATE api_keys SET base_url = ?, encrypted_key = ?, iv = ?, auth_tag = ?, status = 'unknown', enabled = 1 WHERE id = ?")
-        .run(baseUrl, encrypted, iv, authTag, existing.id);
+      db.prepare("UPDATE api_keys SET label = ?, base_url = ?, encrypted_key = ?, iv = ?, auth_tag = ?, status = 'unknown', enabled = 1 WHERE id = ?")
+        .run(label, baseUrl, encrypted, iv, authTag, existing.id);
       keyId = existing.id;
     } else {
       const { encrypted, iv, authTag } = encrypt(rawKey);
@@ -163,37 +252,25 @@ keysRouter.post('/custom', (req: Request, res: Response) => {
       keyId = Number(r.lastInsertRowid);
     }
 
-    // Register the model (idempotent on platform+model_id). Custom models carry
-    // no rate limits and sort last in the intelligence preset (size_label tier).
-    db.prepare(`
-      INSERT OR IGNORE INTO models
-        (platform, model_id, display_name, intelligence_rank, speed_rank, size_label,
-         rpm_limit, rpd_limit, tpm_limit, tpd_limit, monthly_token_budget, context_window, enabled)
-      VALUES ('custom', ?, ?, 50, 50, 'Custom', NULL, NULL, NULL, NULL, '', NULL, 1)
-    `).run(modelId, displayName);
+    const firstModelId = modelIds[0];
+    const modelDbIds = modelIds.map(mid => registerCustomModel(db, mid, mid, label));
 
-    const modelRow = db.prepare("SELECT id FROM models WHERE platform = 'custom' AND model_id = ?").get(modelId) as { id: number };
-
-    // Append to the fallback chain if not already present.
-    const inChain = db.prepare('SELECT 1 FROM fallback_config WHERE model_db_id = ?').get(modelRow.id);
-    if (!inChain) {
-      const max = db.prepare('SELECT COALESCE(MAX(priority), 0) AS m FROM fallback_config').get() as { m: number };
-      db.prepare('INSERT INTO fallback_config (model_db_id, priority, enabled) VALUES (?, ?, 1)').run(modelRow.id, max.m + 1);
-    }
-
-    return { keyId, modelDbId: modelRow.id };
+    return { keyId, firstModelDbId: modelDbIds[0], modelCount: modelIds.length };
   });
 
-  const { keyId, modelDbId } = upsert();
+  const { keyId, firstModelDbId, modelCount } = upsert();
   res.status(201).json({
     success: true,
+    autoDiscovered: autoDiscover,
     keyId,
-    modelDbId,
+    modelDbId: firstModelDbId,
+    modelCount,
     platform: 'custom',
     baseUrl,
-    model: modelId,
-    displayName,
+    model: modelIds[0],
+    displayName: modelIds[0],
     maskedKey: maskKey(rawKey),
+    models: modelIds,
   });
 });
 

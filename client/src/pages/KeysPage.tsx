@@ -8,11 +8,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { PageHeader } from '@/components/page-header'
 import type { ApiKey, Platform } from '../../../shared/types'
-import { Pencil, ExternalLink } from 'lucide-react'
+import { Pencil, ExternalLink, X } from 'lucide-react'
 import { formatSqliteUtcToLocalTime } from '@/lib/utils'
+import { useTranslation } from 'react-i18next'
 
-// Small "Get API key" external link shown next to a provider (#137).
 function GetKeyLink({ url }: { url: string }) {
+  const { t } = useTranslation()
   if (!url) return null
   return (
     <a
@@ -21,7 +22,7 @@ function GetKeyLink({ url }: { url: string }) {
       rel="noopener noreferrer"
       className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
     >
-      Get API key
+      {t('pages.keys.getKey')}
       <ExternalLink className="size-3" />
     </a>
   )
@@ -53,28 +54,20 @@ const PLATFORMS: { value: Platform; label: string; url: string; keyless?: boolea
   { value: 'opencode', label: 'OpenCode Zen (free key)', url: 'https://opencode.ai/auth' },
 ]
 
-// 'custom' is configured through its own form (base URL + model), not the
-// generic key dropdown — but it still appears in the grouped provider list.
-const CUSTOM_GROUP: { value: Platform; label: string; url: string } = {
-  value: 'custom',
-  label: 'Custom (OpenAI-compatible)',
-  url: '',
-}
-
 const statusDot: Record<string, string> = {
   healthy: 'bg-emerald-500',
-  rate_limited: 'bg-amber-500',
+  rate_limited: 'bg-amber-500', 
   invalid: 'bg-rose-500',
   error: 'bg-rose-500',
   unknown: 'bg-muted-foreground/40',
 }
 
-const statusLabel: Record<string, string> = {
-  healthy: 'healthy',
-  rate_limited: 'rate-limited',
-  invalid: 'invalid',
-  error: 'error',
-  unknown: 'unchecked',
+const statusLabelKey: Record<string, string> = {
+  healthy: 'pages.keys.statusHealthy',
+  rate_limited: 'pages.keys.statusRateLimited',
+  invalid: 'pages.keys.statusInvalid',
+  error: 'pages.keys.statusError',
+  unknown: 'pages.keys.statusUnknown',
 }
 
 interface HealthPlatform {
@@ -93,6 +86,7 @@ interface HealthData {
 }
 
 function UnifiedKeySection() {
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [showKey, setShowKey] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -123,9 +117,9 @@ function UnifiedKeySection() {
     <section className="rounded-3xl border bg-card p-5">
       <div className="flex items-start justify-between gap-4 mb-3">
         <div>
-          <h2 className="text-sm font-medium">Your unified API key</h2>
+          <h2 className="text-sm font-medium">{t('pages.keys.header')}</h2>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Use this as your OpenAI <code className="font-mono">api_key</code>; it authenticates requests to this proxy.
+            {t('pages.keys.unifiedKeyDescription')}
           </p>
         </div>
         <Button
@@ -134,81 +128,152 @@ function UnifiedKeySection() {
           onClick={() => regenerate.mutate()}
           disabled={regenerate.isPending || isError}
         >
-          Regenerate
+          {t('pages.keys.regenerate')}
         </Button>
       </div>
 
       {isError ? (
-        <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-xs text-destructive">
-          Can't reach the server on <code className="font-mono">{baseUrl.replace('/v1', '')}</code>. Make sure the
-          backend is running — <code className="font-mono">npm run dev</code> starts both, and the server logs print
-          under the <code className="font-mono">server</code> prefix.
-        </div>
-      ) : (
-        <div className="flex items-center gap-2">
-          <code className="flex-1 font-mono text-xs bg-muted px-3 py-2 rounded-lg select-all truncate tabular-nums">
-            {showKey ? apiKey : masked}
-          </code>
-          <Button variant="outline" size="sm" onClick={() => setShowKey(!showKey)}>
-            {showKey ? 'Hide' : 'Show'}
-          </Button>
-          <Button variant="outline" size="sm" onClick={copy}>
-            {copied ? 'Copied' : 'Copy'}
-          </Button>
-        </div>
-      )}
+         <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-xs text-destructive">
+           {t('pages.keys.cantReachServer', { baseUrl: baseUrl.replace('/v1', '') })}
+         </div>
+       ) : (
+         <div className="flex items-center gap-2">
+           <code className="flex-1 font-mono text-xs bg-muted px-3 py-2 rounded-lg select-all truncate tabular-nums">
+             {showKey ? apiKey : masked}
+           </code>
+           <Button variant="outline" size="sm" onClick={() => setShowKey(!showKey)}>
+             {showKey ? t('pages.keys.hide') : t('pages.keys.show')}
+           </Button>
+           <Button variant="outline" size="sm" onClick={copy}>
+             {copied ? t('pages.keys.copied') : t('pages.keys.copy')}
+           </Button>
+         </div>
+       )}
 
-      <div className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
-        <span className="text-muted-foreground">Base URL</span>
-        <code className="font-mono">{baseUrl}</code>
-        <span className="text-muted-foreground">Chat</span>
-        <code className="font-mono">/v1/chat/completions</code>
-        <span className="text-muted-foreground">Responses</span>
-        <code className="font-mono">/v1/responses</code>
-        <span className="text-muted-foreground">Embeddings</span>
-        <code className="font-mono">/v1/embeddings <span className="text-muted-foreground">— model: "auto" or a family from the Embeddings tab</span></code>
-      </div>
-    </section>
-  )
-}
+        <div className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
+          <span className="text-muted-foreground">{t('pages.keys.baseUrl')}</span>
+          <code className="font-mono">{baseUrl}</code>
+          <span className="text-muted-foreground">{t('pages.keys.chat')}</span>
+          <code className="font-mono">/v1/chat/completions</code>
+          <span className="text-muted-foreground">{t('pages.keys.responses')}</span>
+          <code className="font-mono">/v1/responses</code>
+          <span className="text-muted-foreground">{t('pages.keys.embeddings')}</span>
+          <code className="font-mono">/v1/embeddings <span className="text-muted-foreground">— {t('pages.keys.embeddingsModelHint')}</span></code>
+        </div>
+      </section>
+    )
+  }
 
 function CustomProviderSection() {
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
+  const [label, setLabel] = useState('')
   const [baseUrl, setBaseUrl] = useState('')
   const [model, setModel] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [apiKey, setApiKey] = useState('')
+  const [discoveryResult, setDiscoveryResult] = useState<string | null>(null)
+  const [fetchedModels, setFetchedModels] = useState<string[]>([])
+  const [isFetchingModels, setIsFetchingModels] = useState(false)
+  const [modelsFetchError, setModelsFetchError] = useState('')
+  const [showModelDialog, setShowModelDialog] = useState(false)
+  const [selectedModelInDialog, setSelectedModelInDialog] = useState('')
+  const [modelFilterQuery, setModelFilterQuery] = useState('')
 
   const addCustom = useMutation({
-    mutationFn: (body: { baseUrl: string; model: string; displayName?: string; apiKey?: string }) =>
+    mutationFn: (body: { baseUrl: string; model?: string; displayName?: string; apiKey?: string; label?: string }) =>
       apiFetch('/api/keys/custom', { method: 'POST', body: JSON.stringify(body) }),
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['keys'] })
       queryClient.invalidateQueries({ queryKey: ['health'] })
       queryClient.invalidateQueries({ queryKey: ['fallback'] })
       queryClient.invalidateQueries({ queryKey: ['models'] })
-      setModel('')
-      setDisplayName('')
+      if (data.autoDiscovered) {
+        setDiscoveryResult(t('pages.keys.discovered', { count: data.modelCount ?? 0 }))
+      } else if (data.warning) {
+        setDiscoveryResult(data.warning)
+      } else {
+        setDiscoveryResult(null)
+      }
+      if (!data.warning) {
+        setBaseUrl('')
+        setModel('')
+        setDisplayName('')
+        setLabel('')
+        setApiKey('')
+        setFetchedModels([])
+        setModelsFetchError('')
+        setShowModelDialog(false)
+        setSelectedModelInDialog('')
+        setModelFilterQuery('')
+      }
     },
   })
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!baseUrl || !model) return
-    addCustom.mutate({ baseUrl, model, displayName: displayName || undefined, apiKey: apiKey || undefined })
+    if (!baseUrl) return
+    addCustom.mutate({
+      baseUrl,
+      model: model || undefined,
+      displayName: displayName || undefined,
+      apiKey: apiKey || undefined,
+      label: label || undefined,
+    })
   }
+
+  const isAutoDiscovering = addCustom.isPending && !model
+
+  const fetchModelList = async () => {
+    if (!baseUrl) return
+    setIsFetchingModels(true)
+    setModelsFetchError('')
+    setFetchedModels([])
+    try {
+      const res = await apiFetch('/api/keys/custom/discover', {
+        method: 'POST',
+        body: JSON.stringify({ baseUrl, apiKey: apiKey || undefined }),
+      })
+      const data = await res.json()
+      if (data.models?.length) {
+        setFetchedModels(data.models)
+        setShowModelDialog(true)
+        setModelFilterQuery('')
+        setSelectedModelInDialog('')
+      } else {
+        setModelsFetchError(t('pages.keys.modelFetchFailed'))
+      }
+    } catch (e) {
+      console.error(e)
+      setModelsFetchError(t('pages.keys.modelFetchFailed'))
+    } finally {
+      setIsFetchingModels(false)
+    }
+  }
+
+  const confirmModelSelection = () => {
+    if (selectedModelInDialog) {
+      setModel(selectedModelInDialog)
+      if (!displayName) setDisplayName(selectedModelInDialog)
+    }
+    setShowModelDialog(false)
+    setSelectedModelInDialog('')
+    setModelFilterQuery('')
+  }
+
+  const filteredModels = fetchedModels.filter(m =>
+    m.toLowerCase().includes(modelFilterQuery.toLowerCase())
+  )
 
   return (
     <section>
-      <h2 className="text-sm font-medium mb-1">Add a custom OpenAI-compatible model</h2>
+      <h2 className="text-sm font-medium mb-1">{t('pages.keys.customModelTitle')}</h2>
       <p className="text-xs text-muted-foreground mb-3">
-        Point at any OpenAI-compatible endpoint — llama.cpp, LM Studio, vLLM, a local Ollama, or a remote
-        gateway. Add each model you want routed; they all share the one endpoint. The API key is optional
-        (most local servers don't need one).
+        {t('pages.keys.customModelDesc')}
       </p>
       <form onSubmit={submit} className="flex flex-wrap items-end gap-3 rounded-3xl border p-4 bg-card">
         <div className="space-y-1.5 flex-1 min-w-[240px]">
-          <Label className="text-xs">Base URL</Label>
+          <Label className="text-xs">{t('pages.keys.baseUrl')}</Label>
           <Input
             value={baseUrl}
             onChange={e => setBaseUrl(e.target.value)}
@@ -217,45 +282,125 @@ function CustomProviderSection() {
           />
         </div>
         <div className="space-y-1.5">
-          <Label className="text-xs">Model</Label>
-          <Input
-            value={model}
-            onChange={e => setModel(e.target.value)}
-            placeholder="qwen3:4b"
-            className="w-[180px] font-mono text-xs"
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs">Display name</Label>
-          <Input
-            value={displayName}
-            onChange={e => setDisplayName(e.target.value)}
-            placeholder="optional"
-            className="w-[150px]"
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs">API key</Label>
+          <Label className="text-xs">{t('pages.keys.apiKey')}</Label>
           <Input
             type="password"
             value={apiKey}
             onChange={e => setApiKey(e.target.value)}
-            placeholder="optional"
+            placeholder={t('pages.keys.optional')}
             className="w-[150px] font-mono text-xs"
           />
         </div>
-        <Button type="submit" size="sm" disabled={!baseUrl || !model || addCustom.isPending}>
-          {addCustom.isPending ? 'Adding…' : 'Add model'}
+        <div className="space-y-1.5">
+          <Label className="text-xs">{t('pages.keys.label')}</Label>
+          <Input
+            value={label}
+            onChange={e => setLabel(e.target.value)}
+            placeholder={t('pages.keys.optional')}
+            className="w-[150px]"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2">
+            <Label className="text-xs">{t('pages.keys.model')}</Label>
+            <button
+              type="button"
+              onClick={fetchModelList}
+              disabled={!baseUrl || isFetchingModels}
+              className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isFetchingModels ? t('pages.keys.fetchingModels') : t('pages.keys.fetchModels')}
+            </button>
+          </div>
+          <Input
+            value={model}
+            onChange={e => setModel(e.target.value)}
+            placeholder="qwen3:4b"
+            className="w-[280px] font-mono text-xs"
+          />
+          {modelsFetchError && (
+            <p className="text-xs text-destructive">{modelsFetchError}</p>
+          )}
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">{t('pages.keys.displayName')}</Label>
+          <Input
+            value={displayName}
+            onChange={e => setDisplayName(e.target.value)}
+            placeholder={t('pages.keys.optional')}
+            className="w-[150px]"
+          />
+        </div>
+        <Button type="submit" size="sm" disabled={!baseUrl || addCustom.isPending}>
+          {isAutoDiscovering ? t('pages.keys.discovering') : addCustom.isPending ? t('pages.keys.adding') : t('pages.keys.addModel')}
         </Button>
       </form>
+
+      {showModelDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-background rounded-2xl border shadow-lg w-[500px] max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-sm font-medium">{t('pages.keys.selectModel')}</h3>
+              <button
+                type="button"
+                onClick={() => setShowModelDialog(false)}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+            <div className="p-4">
+              <Input
+                value={modelFilterQuery}
+                onChange={e => setModelFilterQuery(e.target.value)}
+                placeholder={t('pages.keys.filterModels')}
+                className="mb-3"
+              />
+              <div className="overflow-y-auto max-h-[50vh] space-y-1">
+                {filteredModels.map(m => (
+                  <div
+                    key={m}
+                    onClick={() => setSelectedModelInDialog(m)}
+                    className={`px-3 py-2 rounded-lg cursor-pointer text-sm font-mono ${
+                      selectedModelInDialog === m
+                        ? 'bg-primary text-primary-foreground'
+                        : 'hover:bg-muted'
+                    }`}
+                  >
+                    {m}
+                  </div>
+                ))}
+                {filteredModels.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    {t('pages.keys.noModelsFound')}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 p-4 border-t">
+              <Button variant="outline" size="sm" onClick={() => setShowModelDialog(false)}>
+                {t('common.cancel')}
+              </Button>
+              <Button size="sm" onClick={confirmModelSelection} disabled={!selectedModelInDialog}>
+                {t('common.ok')}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {addCustom.isError && (
         <p className="text-destructive text-xs mt-2">{(addCustom.error as Error).message}</p>
+      )}
+      {discoveryResult && (
+        <p className={addCustom.isError ? 'text-destructive text-xs mt-2' : 'text-muted-foreground text-xs mt-2'}>{discoveryResult}</p>
       )}
     </section>
   )
 }
 
 export default function KeysPage() {
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [platform, setPlatform] = useState<Platform | ''>('')
   const [apiKey, setApiKey] = useState('')
@@ -328,13 +473,14 @@ export default function KeysPage() {
   })
 
   const updateKey = useMutation({
-    mutationFn: ({ id, label }: { id: number; label: string }) =>
+    mutationFn: ({ id, label, enabled }: { id: number; label?: string; enabled?: boolean }) =>
       apiFetch(`/api/keys/${id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ label }),
+        body: JSON.stringify({ ...(label !== undefined && { label }), ...(enabled !== undefined && { enabled }) }),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['keys'] })
+      queryClient.invalidateQueries({ queryKey: ['health'] })
       setEditingKeyId(null)
       setEditingLabel('')
     },
@@ -378,20 +524,31 @@ export default function KeysPage() {
   const healthKeyMap = new Map<number, { status: string; lastCheckedAt: string | null }>()
   for (const k of healthData?.keys ?? []) healthKeyMap.set(k.id, k)
 
-  const grouped = [...PLATFORMS, CUSTOM_GROUP].map(p => ({
+  const regularGroups = PLATFORMS.map(p => ({
     ...p,
     keys: keys.filter(k => k.platform === p.value),
   })).filter(p => p.keys.length > 0)
 
+  const customKeysList = keys.filter(k => k.platform === 'custom')
+  const customGroups = customKeysList.map(k => ({
+    value: `custom:${k.id}`,
+    label: k.label || k.baseUrl || t('pages.keys.customProvider'),
+    url: '',
+    keys: [k],
+    isCustom: true as const,
+  }))
+
+  const grouped = [...regularGroups, ...customGroups]
+
   return (
     <div>
-      <PageHeader
-        title="Keys"
-        description="Provider credentials and the unified API key your apps connect with."
+       <PageHeader
+         title={t('pages.keys.header')}
+         description={t('pages.keys.description')}
         actions={
           keys.length > 0 && (
             <Button variant="outline" size="sm" onClick={() => checkAll.mutate()} disabled={checkAll.isPending}>
-              {checkAll.isPending ? 'Checking…' : 'Check all'}
+              {checkAll.isPending ? t('pages.keys.checkingAll') : t('pages.keys.checkAll')}
             </Button>
           )
         }
@@ -400,20 +557,20 @@ export default function KeysPage() {
       <div className="space-y-8">
         <UnifiedKeySection />
 
-        <section>
-          <h2 className="text-sm font-medium mb-3">Add a provider key</h2>
-          <form onSubmit={handleSubmit} className="flex flex-wrap gap-3 rounded-3xl border p-4 bg-card">
+         <section>
+           <h2 className="text-sm font-medium mb-3">{t('pages.keys.addProviderKey')}</h2>
+          <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-3 rounded-3xl border p-4 bg-card">
             <div className="space-y-1.5">
-              <Label className="text-xs">Platform</Label>
+              <Label className="text-xs">{t('pages.keys.platformLabel')}</Label>
               <Select value={platform} onValueChange={(v) => setPlatform(v as Platform)}>
                 <SelectTrigger className="w-[220px]">
-                  <SelectValue placeholder="Select provider" />
+                  <SelectValue placeholder={t('pages.keys.selectProvider')} />
                 </SelectTrigger>
-                <SelectContent>
-                  {PLATFORMS.map(p => (
-                    <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
-                  ))}
-                </SelectContent>
+                 <SelectContent>
+                    {PLATFORMS.map(p => (
+                      <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                    ))}
+                 </SelectContent>
               </Select>
               {(() => {
                 const sel = PLATFORMS.find(p => p.value === platform)
@@ -422,7 +579,7 @@ export default function KeysPage() {
             </div>
             {needsAccountId && (
               <div className="space-y-1.5">
-                <Label className="text-xs">Account ID</Label>
+                <Label className="text-xs">{t('pages.keys.accountId')}</Label>
                 <Input
                   value={accountId}
                   onChange={e => setAccountId(e.target.value)}
@@ -432,35 +589,33 @@ export default function KeysPage() {
               </div>
             )}
             <div className="space-y-1.5 flex-1 min-w-[240px]">
-              <Label className="text-xs">{needsAccountId ? 'API token' : 'API key'}</Label>
+              <Label className="text-xs">{needsAccountId ? t('pages.keys.apiToken') : t('pages.keys.apiKey')}</Label>
               <Input
                 type="password"
                 value={isKeyless ? '' : apiKey}
                 onChange={e => setApiKey(e.target.value)}
-                placeholder={isKeyless ? 'No API key needed' : (needsAccountId ? 'Bearer token' : 'paste key here')}
+                placeholder={isKeyless ? t('pages.keys.noKeyNeeded') : (needsAccountId ? t('pages.keys.bearerToken') : t('pages.keys.pasteKey'))}
                 className="font-mono text-xs"
                 disabled={isKeyless}
               />
               {isKeyless && (
                 <p className="text-[11px] text-muted-foreground">
-                  No API key needed — this provider's free tier is anonymous (rate-limited per IP).
+                  {t('pages.keys.noKeyDescription')}
                 </p>
               )}
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Label</Label>
-              <div className="flex flex-wrap items-center space-x-3">
-                <Input
-                  value={label}
-                  onChange={e => setLabel(e.target.value)}
-                  placeholder="optional"
-                  className="w-[160px]"
-                />
-                <Button type="submit" size="sm" disabled={!platform || (!isKeyless && !apiKey) || (needsAccountId && !accountId) || addKey.isPending}>
-                  {addKey.isPending ? 'Adding…' : isKeyless ? 'Enable' : 'Add key'}
-                </Button>
-              </div>
+              <Label className="text-xs">{t('pages.keys.label')}</Label>
+              <Input
+                value={label}
+                onChange={e => setLabel(e.target.value)}
+                placeholder={t('pages.keys.optional')}
+                className="w-[160px]"
+              />
             </div>
+            <Button type="submit" size="sm" disabled={!platform || (!isKeyless && !apiKey) || (needsAccountId && !accountId) || addKey.isPending}>
+              {addKey.isPending ? t('pages.keys.adding') : isKeyless ? t('pages.keys.enable') : t('pages.keys.addKeyButton')}
+            </Button>
           </form>
           {addKey.isError && (
             <p className="text-destructive text-xs mt-2">{(addKey.error as Error).message}</p>
@@ -469,36 +624,51 @@ export default function KeysPage() {
 
         <CustomProviderSection />
 
-        <section>
-          <h2 className="text-sm font-medium mb-3">Configured providers</h2>
+         <section>
+           <h2 className="text-sm font-medium mb-3">{t('pages.keys.configuredProviders')}</h2>
           {isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading…</p>
+            <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
           ) : keys.length === 0 ? (
             <div className="rounded-3xl border border-dashed p-8 text-center">
               <p className="text-sm text-muted-foreground">
-                No provider keys yet. Add one above to start routing.
+                {t('pages.keys.noProviders')}
               </p>
             </div>
           ) : (
             <div className="space-y-6">
-              {grouped.map(group => (
-                <div key={group.value}>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <Switch
-                        checked={group.keys.some(k => k.enabled)}
-                        onCheckedChange={(checked) =>
-                          togglePlatform.mutate({ platform: group.value, enabled: checked })
-                        }
-                        disabled={togglePlatform.isPending}
-                      />
-                      <h3 className="text-sm font-medium">{group.label}</h3>
-                      <GetKeyLink url={group.url} />
+               {grouped.map(group => (
+                  <div key={group.value}>
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-2">
+                        {'isCustom' in group ? (
+                          <Switch
+                            checked={group.keys[0]?.enabled ?? false}
+                            onCheckedChange={(checked) =>
+                              updateKey.mutate({ id: group.keys[0].id, enabled: checked })
+                            }
+                            disabled={updateKey.isPending}
+                          />
+                        ) : (
+                          <Switch
+                            checked={group.keys.some(k => k.enabled)}
+                            onCheckedChange={(checked) =>
+                              togglePlatform.mutate({ platform: group.value, enabled: checked })
+                            }
+                            disabled={togglePlatform.isPending}
+                          />
+                        )}
+                        <h3 className="text-sm font-medium">{group.label}</h3>
+                        {!('isCustom' in group) && group.url && <GetKeyLink url={group.url} />}
+                      </div>
+                     <span className="text-xs text-muted-foreground tabular-nums">
+                       {t('pages.keys.keyCount', { count: group.keys.length })}
+                     </span>
                     </div>
-                    <span className="text-xs text-muted-foreground tabular-nums">
-                      {group.keys.length} key{group.keys.length === 1 ? '' : 's'}
-                    </span>
-                  </div>
+                    {'isCustom' in group && group.keys[0]?.baseUrl && (
+                      <p className="text-xs text-muted-foreground mb-2 ml-9 font-mono">
+                        {group.keys[0].baseUrl}
+                      </p>
+                    )}
                   <div className="rounded-2xl border divide-y bg-card overflow-hidden">
                     {group.keys.map(k => {
                       const h = healthKeyMap.get(k.id)
@@ -527,7 +697,7 @@ export default function KeysPage() {
                               {k.label && <span className="text-xs text-muted-foreground">{k.label}</span>}
                             </>
                           )}
-                          <span className="text-xs text-muted-foreground">{statusLabel[status] ?? status}</span>
+                          <span className="text-xs text-muted-foreground">{t(statusLabelKey[status] ?? status)}</span>
                           <div className="flex-1" />
                           {lastChecked && (
                             <span className="text-[11px] text-muted-foreground tabular-nums">
@@ -540,10 +710,10 @@ export default function KeysPage() {
                             </Button>
                           )}
                           <Button variant="ghost" size="xs" onClick={() => checkKey.mutate(k.id)} disabled={checkKey.isPending}>
-                            Check
+                            {t('pages.keys.checkKey')}
                           </Button>
                           <Button variant="ghost" size="xs" className="text-muted-foreground hover:text-destructive" onClick={() => deleteKey.mutate(k.id)} disabled={deleteKey.isPending}>
-                            Remove
+                            {t('pages.keys.remove')}
                           </Button>
                         </div>
                       )
